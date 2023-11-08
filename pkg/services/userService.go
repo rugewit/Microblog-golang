@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/redis/go-redis/v9"
 	"github.com/rugewit/microblog-golang/pkg/models"
 	"github.com/spf13/viper"
@@ -10,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
+	"time"
 )
 
 type UserMongoService struct {
@@ -55,19 +57,49 @@ func (service *UserMongoService) CreateMany(userAccounts []*models.UserAccount) 
 func (service *UserMongoService) Get(id string) (*models.UserAccount, error) {
 	userAccount := new(models.UserAccount)
 
-	objectId, _ := primitive.ObjectIDFromHex(id)
-	res := service.UserAccountCollection.FindOne(service.ctx, bson.M{"_id": objectId})
+	// trying to find in redis
+	redisResult, err := service.rdb.Get(service.ctx, id).Result()
 
-	if res.Err() != nil {
-		return userAccount, res.Err()
+	// not found in redis - load from mongo db
+	if err == redis.Nil {
+		log.Println("Load from mongo db")
+		// load from mongo db
+		objectId, err := primitive.ObjectIDFromHex(id)
+
+		if err != nil {
+			return nil, err
+		}
+
+		res := service.UserAccountCollection.FindOne(service.ctx, bson.M{"_id": objectId})
+
+		if res.Err() != nil {
+			return nil, res.Err()
+		}
+
+		err = res.Decode(userAccount)
+		if err != nil {
+			return nil, err
+		}
+
+		// push into redis
+		jsonRes, err := json.Marshal(userAccount)
+		if err != nil {
+			return nil, err
+		}
+		service.rdb.Set(service.ctx, id, jsonRes, 3*time.Second)
+		return userAccount, nil
+
+	} else if err != nil {
+		return nil, err
+
+	} else {
+		log.Println("Load from redis")
+		err := json.Unmarshal([]byte(redisResult), userAccount)
+		if err != nil {
+			return nil, err
+		}
+		return userAccount, nil
 	}
-
-	err := res.Decode(userAccount)
-	if err != nil {
-		return userAccount, err
-	}
-
-	return userAccount, nil
 }
 
 func (service *UserMongoService) GetMany(limit int) ([]models.UserAccount, error) {

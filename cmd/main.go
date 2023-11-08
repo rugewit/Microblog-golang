@@ -4,24 +4,37 @@ import (
 	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/rugewit/microblog-golang/pkg/models"
+	"github.com/rugewit/microblog-golang/pkg/controllers"
 	"github.com/rugewit/microblog-golang/pkg/services"
-	"github.com/rugewit/microblog-golang/pkg/userAccounts"
 	"github.com/spf13/viper"
 	"log"
 )
 
-func main() {
-	fmt.Println("Hello backend!")
-	envPath := "./pkg/env/.env"
+func LoadViper(envPath string) error {
 	viper.SetConfigFile(envPath)
 	err := viper.ReadInConfig()
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func main() {
+	fmt.Println("Hello backend!")
+
+	err := LoadViper("./pkg/env/.env")
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	port := viper.Get("PORT").(string)
 
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
-	port := viper.Get("PORT").(string)
 
 	dataBase, err := services.NewMongoDataBase()
 	if err != nil {
@@ -30,22 +43,10 @@ func main() {
 
 	ctx := context.Background()
 	userAccountService := services.NewUserAccountService(dataBase, ctx)
-
-	_ = models.UserAccount{
-		Reputation:     4,
-		CreationDate:   "123",
-		DisplayName:    "Alexey",
-		LastAccessDate: "yesterday",
-		WebsiteUrl:     "ya.ru",
-		Location:       "Moscow",
-		AboutMe:        "I am not superman",
-		Views:          12,
-		UpVotes:        13,
-		DownVotes:      5,
-		AccountId:      84,
-	}
+	messageService := services.NewMessageService(dataBase, ctx)
 
 	router := gin.Default()
-	userAccounts.RegisterRoutes(router, userAccountService)
+	controllers.UserRegisterRoutes(router, userAccountService)
+	controllers.MessageRegisterRoutes(router, messageService)
 	router.Run(port)
 }
