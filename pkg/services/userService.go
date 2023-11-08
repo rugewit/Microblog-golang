@@ -23,7 +23,11 @@ type UserMongoService struct {
 func NewUserAccountService(database *MongoDataBase, ctx context.Context) *UserMongoService {
 	userMongoService := new(UserMongoService)
 	UserColName := viper.Get("USER_COL_NAME").(string)
-	userMongoService.UserAccountCollection = database.GetMongoCollection(UserColName)
+	var err error
+	userMongoService.UserAccountCollection, err = database.GetMongoCollection(UserColName)
+	if err != nil {
+		panic(err)
+	}
 	userMongoService.ctx = ctx
 	userMongoService.rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",

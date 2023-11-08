@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -44,13 +45,10 @@ func NewMongoDataBase() (*MongoDataBase, error) {
 	return db, nil
 }
 
-func (db *MongoDataBase) GetMongoCollection(collectionName string) *mongo.Collection {
-	if db == nil {
-		log.Fatal("db is nil")
-	}
+func (db *MongoDataBase) GetMongoCollection(collectionName string) (*mongo.Collection, error) {
 	collection := db.Database.Collection(collectionName)
 	if collection == nil {
-		log.Fatal("collection is nil")
+		return nil, errors.New("collection is nil")
 	}
-	return db.Database.Collection(collectionName)
+	return db.Database.Collection(collectionName), nil
 }

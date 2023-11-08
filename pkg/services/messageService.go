@@ -18,7 +18,11 @@ type MessageService struct {
 func NewMessageService(database *MongoDataBase, ctx context.Context) *MessageService {
 	messageService := new(MessageService)
 	UserColName := viper.Get("MESSAGE_COL_NAME").(string)
-	messageService.MessageCollection = database.GetMongoCollection(UserColName)
+	var err error
+	messageService.MessageCollection, err = database.GetMongoCollection(UserColName)
+	if err != nil {
+		panic(err)
+	}
 	messageService.ctx = ctx
 	return messageService
 }
