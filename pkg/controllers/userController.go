@@ -1,23 +1,26 @@
 package controllers
 
 import (
+	"errors"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/rugewit/microblog-golang/pkg/additinal"
 	"github.com/rugewit/microblog-golang/pkg/dataHandler"
 	"github.com/rugewit/microblog-golang/pkg/models"
 	"github.com/rugewit/microblog-golang/pkg/services"
+	"log"
 	"net/http"
 )
 
 type UserController struct {
-	userAccountService *services.UserMongoService
+	userAccountService *services.UserAccountService
 }
 
-func NewUserController(userAccountService *services.UserMongoService) *UserController {
+func NewUserController(userAccountService *services.UserAccountService) *UserController {
 	return &UserController{userAccountService: userAccountService}
 }
 
-func UserRegisterRoutes(r *gin.Engine, userAccService *services.UserMongoService) {
+func UserRegisterRoutes(r *gin.Engine, userAccService *services.UserAccountService) {
 	userController := NewUserController(userAccService)
 
 	routes := r.Group("/users")
@@ -102,8 +105,14 @@ func (userController UserController) UpdateUserAccount(c *gin.Context) {
 		return
 	}
 
-	if err := userController.userAccountService.Update(id, updatedUserAccount); err != nil {
-		c.AbortWithError(http.StatusNotFound, err)
+	err = userController.userAccountService.Update(id, updatedUserAccount)
+	if errors.Is(err, services.IsLockedErr) {
+		//log.Printf("BIBA")
+		c.JSON(http.StatusLocked, fmt.Sprintf("%s is locked", id))
+		return
+	} else if err != nil {
+		log.Printf("I am here\n")
+		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, updatedUserAccount)

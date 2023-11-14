@@ -3,6 +3,9 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/bsm/redislock"
 	"github.com/redis/go-redis/v9"
 	"github.com/rugewit/microblog-golang/pkg/models"
 	"github.com/spf13/viper"
@@ -14,30 +17,33 @@ import (
 	"time"
 )
 
-type UserMongoService struct {
+type UserAccountService struct {
 	UserAccountCollection *mongo.Collection
 	ctx                   context.Context
 	rdb                   *redis.Client
+	locker                *redislock.Client
 }
 
-func NewUserAccountService(database *MongoDataBase, ctx context.Context) *UserMongoService {
-	userMongoService := new(UserMongoService)
-	UserColName := viper.Get("USER_COL_NAME").(string)
+func NewUserAccountService(database *MongoDataBase, ctx context.Context, collectionName string) *UserAccountService {
+	userAccountService := new(UserAccountService)
+	UserColName := viper.Get(collectionName).(string)
 	var err error
-	userMongoService.UserAccountCollection, err = database.GetMongoCollection(UserColName)
+	userAccountService.UserAccountCollection, err = database.GetMongoCollection(UserColName)
 	if err != nil {
 		panic(err)
 	}
-	userMongoService.ctx = ctx
-	userMongoService.rdb = redis.NewClient(&redis.Options{
+	userAccountService.ctx = ctx
+	userAccountService.rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
-	return userMongoService
+	userAccountService.rdb.FlushDB(userAccountService.ctx)
+	userAccountService.locker = redislock.New(userAccountService.rdb)
+	return userAccountService
 }
 
-func (service *UserMongoService) Create(userAccount *models.UserAccount) error {
+func (service *UserAccountService) Create(userAccount *models.UserAccount) error {
 	_, err := service.UserAccountCollection.InsertOne(service.ctx, userAccount)
 	if err != nil {
 		return err
@@ -45,7 +51,7 @@ func (service *UserMongoService) Create(userAccount *models.UserAccount) error {
 	return nil
 }
 
-func (service *UserMongoService) CreateMany(userAccounts []*models.UserAccount) error {
+func (service *UserAccountService) CreateMany(userAccounts []*models.UserAccount) error {
 	interfaceSlice := make([]interface{}, len(userAccounts))
 	for i, account := range userAccounts {
 		interfaceSlice[i] = account
@@ -58,7 +64,7 @@ func (service *UserMongoService) CreateMany(userAccounts []*models.UserAccount) 
 	return nil
 }
 
-func (service *UserMongoService) Get(id string) (*models.UserAccount, error) {
+func (service *UserAccountService) Get(id string) (*models.UserAccount, error) {
 	userAccount := new(models.UserAccount)
 
 	// trying to find in redis
@@ -90,7 +96,7 @@ func (service *UserMongoService) Get(id string) (*models.UserAccount, error) {
 		if err != nil {
 			return nil, err
 		}
-		service.rdb.Set(service.ctx, id, jsonRes, 3*time.Second)
+		service.rdb.Set(service.ctx, id, jsonRes, 120*time.Second)
 		return userAccount, nil
 
 	} else if err != nil {
@@ -106,7 +112,7 @@ func (service *UserMongoService) Get(id string) (*models.UserAccount, error) {
 	}
 }
 
-func (service *UserMongoService) GetMany(limit int) ([]models.UserAccount, error) {
+func (service *UserAccountService) GetMany(limit int) ([]models.UserAccount, error) {
 	var userAccounts []models.UserAccount
 
 	findOptions := options.Find()
@@ -141,22 +147,43 @@ func (service *UserMongoService) GetMany(limit int) ([]models.UserAccount, error
 	return userAccounts, nil
 }
 
-func (service *UserMongoService) Update(id string, newUserAccount *models.UserAccount) error {
+var IsLockedErr error = errors.New("UserAccount is locked")
+
+func (service *UserAccountService) Update(id string, newUserAccount *models.UserAccount) error {
 	objectId, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		return err
 	}
 
-	_, err = service.UserAccountCollection.ReplaceOne(service.ctx, bson.M{"_id": objectId}, newUserAccount)
+	lockTime := 60 * time.Second
+	redactionSimulationTime := 30 * time.Second
 
-	if err != nil {
-		return err
-	}
+	lockId := id + "1"
+	errCh := make(chan error)
+	go func() {
+		lock, err := service.locker.Obtain(service.ctx, lockId, lockTime, nil)
+		// it's already locked
+		if errors.Is(err, redislock.ErrNotObtained) {
+			fmt.Printf("userService %s is locked!\n", lockId)
+			errCh <- IsLockedErr
+			return
+			// some other error
+		} else if err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+		// Don't forget to defer Release.
+		defer lock.Release(service.ctx)
+		time.Sleep(redactionSimulationTime)
+		_, err = service.UserAccountCollection.ReplaceOne(service.ctx, bson.M{"_id": objectId}, newUserAccount)
+		service.rdb.Del(service.ctx, id)
+	}()
 
-	return nil
+	return <-errCh
 }
 
-func (service *UserMongoService) Delete(id string) error {
+func (service *UserAccountService) Delete(id string) error {
 	objectId, err := primitive.ObjectIDFromHex(id)
 
 	if err != nil {
@@ -166,6 +193,9 @@ func (service *UserMongoService) Delete(id string) error {
 	_, err = service.UserAccountCollection.DeleteOne(service.ctx, bson.M{"_id": objectId})
 	if err != nil {
 		return err
+	}
+	if isInCache := service.rdb.Get(service.ctx, id); isInCache != nil {
+		service.rdb.Del(service.ctx, id)
 	}
 	return nil
 }

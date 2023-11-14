@@ -3,6 +3,7 @@ module github.com/rugewit/microblog-golang
 go 1.21.3
 
 require (
+	github.com/bsm/redislock v0.9.4
 	github.com/gin-gonic/gin v1.9.1
 	github.com/magiconair/properties v1.8.7
 	github.com/redis/go-redis/v9 v9.3.0
@@ -22,8 +23,11 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.15.5 // indirect
+	github.com/go-redsync/redsync/v4 v4.11.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang/snappy v0.0.1 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.17.0 // indirect

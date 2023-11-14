@@ -42,7 +42,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	userAccountService := services.NewUserAccountService(dataBase, ctx)
+	userAccountService := services.NewUserAccountService(dataBase, ctx, "USER_COL_NAME")
 	messageService := services.NewMessageService(dataBase, ctx)
 
 	router := gin.Default()

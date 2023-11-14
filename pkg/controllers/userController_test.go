@@ -33,10 +33,9 @@ func getDependenciesForUserService() (*services.MongoDataBase, context.Context) 
 
 func TestGetUserAccounts(t *testing.T) {
 	dataBase, ctx := getDependenciesForUserService()
-	userAccountService := services.NewUserAccountService(dataBase, ctx)
+	userAccountService := services.NewUserAccountService(dataBase, ctx, "TEST_USER_COL_NAME")
 	router := gin.Default()
-	RegisterRoutes(router, userAccountService)
-
+	UserRegisterRoutes(router, userAccountService)
 	// request
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/users/", nil)
